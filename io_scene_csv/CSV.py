@@ -19,7 +19,7 @@ import math
 import os
 import pathlib
 from typing import List, Tuple
-from .chardet import chardet
+#from .chardet import chardet
 from . import logger
 
 

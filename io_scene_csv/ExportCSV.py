@@ -60,6 +60,9 @@ class ExportCsv:
 
         object_list = bpy.context.selected_objects
 
+        if len(object_list) == 0:
+            object_list = bpy.context.scene.objects
+
         for obj in object_list:
             if obj.type != "MESH":
                 continue
@@ -122,25 +125,33 @@ class ExportCsv:
                     mat = obj.material_slots[m_idx].material
                     mesh.name += ", Material: " + mat.name
 
-                    # Add diffuse color to mesh
-                    mesh.diffuse_color = (round(mat.diffuse_color[0] * 255), round(mat.diffuse_color[1] * 255), round(mat.diffuse_color[2] * 255), round(mat.alpha * 255) if mat.use_transparency else 255)
-
-                    # Add texture to mesh
                     model_dir = pathlib.Path(self.file_path).parent
-
-                    if mat.active_texture_index < len(mat.texture_slots):
-                        texture_slot = mat.texture_slots[mat.active_texture_index]
-
-                        if texture_slot is not None and type(texture_slot.texture) is bpy.types.ImageTexture:
-                            if texture_slot.texture.image.filepath != "":
-                                texture_path = pathlib.Path(bpy.path.abspath(texture_slot.texture.image.filepath)).resolve()
-
-                                if self.option.use_copy_texture_separate_directory:
-                                    mesh.daytime_texture_file = self.copy_texture_separate_directory(model_dir, texture_path)
-                                else:
-                                    mesh.daytime_texture_file = str(texture_path)
-
-                            mesh.diffuse_color = (mesh.diffuse_color[0], mesh.diffuse_color[1], mesh.diffuse_color[2], round(texture_slot.alpha_factor * 255))
+#
+                    if mat.use_nodes:
+                        nodes = mat.node_tree.nodes
+                        principled = next(n for n in nodes if n.type == 'BSDF_PRINCIPLED')
+                        if len(principled.inputs['Base Color'].links) > 0:
+                            need_color = True
+                            for link in principled.inputs['Base Color'].links:
+                                if link.from_node.type == "TEX_IMAGE":
+                                    texture_path = pathlib.Path(bpy.path.abspath(link.from_node.image.filepath)).resolve()
+                                    if self.option.use_copy_texture_separate_directory:
+                                        mesh.daytime_texture_file = self.copy_texture_separate_directory(model_dir, texture_path)
+                                    else:
+                                        mesh.daytime_texture_file = str(texture_path)
+                                if link.from_node.type == "RGB":
+                                    need_color = False
+                                    for out in link.from_node.outputs:
+                                        if out.type == 'RGBA':
+                                            mesh.diffuse_color = tuple(i * 255 for i in out.default_value)
+                            if need_color:
+                                mesh.diffuse_color = (255, 255, 255, 255)
+                        else:
+                            mesh.diffuse_color = tuple(i * 255 for i in principled.inputs['Base Color'].default_value)
+                        #x_mat.emission_color = principled.inputs['Emission'].default_value
+                    else:
+                        mesh.diffuse_color = tuple(i * 255 for i in mat.diffuse_color)
+                        #x_mat.emission_color = (0.0, 0.0, 0.0)
 
                     mesh.use_add_face2 = mat.csv_props.use_add_face2
 
@@ -161,6 +172,7 @@ class ExportCsv:
                 mesh.glow_half_distance = obj.csv_props.glow_half_distance
                 mesh.glow_attenuation_mode = obj.csv_props.glow_attenuation_mode
                 mesh.use_transparent_color = obj.csv_props.use_transparent_color
+                print(obj.csv_props.transparent_color)
                 mesh.transparent_color = (round(obj.csv_props.transparent_color[0] * 255), round(obj.csv_props.transparent_color[1] * 255), round(obj.csv_props.transparent_color[2] * 255))
 
                 # Finalize
